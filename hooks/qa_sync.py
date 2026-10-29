@@ -7,9 +7,7 @@
      (git pull --ff-only). Предупреждает, что работать лучше в рабочей ветке (команда /start).
   3. На рабочей ветке: сообщает, насколько она отстаёт от основной; свой upstream подтягивает
      только если дерево чистое и это fast-forward.
-  4. Проверяет комплект (путь записан в .qa-kit/kit_path): если у него есть новые коммиты и дерево
-     чистое, подтягивает и применяет к проекту (setup_project.py --update --no-exclude).
-     Отключить: переменная QA_KIT_NO_AUTOUPDATE=1. Совсем отключить хук: QA_KIT_NO_SYNC=1.
+  Отключить хук совсем: переменная QA_KIT_NO_SYNC=1.
 
 Никогда не создаёт и не переключает ветки, не делает commit и push, не падает при отсутствии сети
 (при ошибке просто сообщает об этом). Всегда завершается с кодом 0.
@@ -116,8 +114,8 @@ def sync_qa_repo(repo: Path, notes: list[str], warns: list[str]) -> None:
                                  "но подтянуть без слияния не получилось. Сделайте git pull вручную.")
         else:
             notes.append(f"Основная ветка {base} актуальна.")
-        warns.append(f"Вы на основной ветке {base}. Работать лучше в рабочей ветке от свежей {base}: "
-                     "команда /start <имя>. Тесты в основную ветку агент писать не будет.")
+        notes.append(f"Вы на основной ветке {base}. Перед генерацией тестов агент сам создаст рабочую "
+                     "ветку от свежей основной (команда /gen); вручную то же делает /start <имя>.")
         return
 
     # рабочая ветка
@@ -148,54 +146,6 @@ def sync_qa_repo(repo: Path, notes: list[str], warns: list[str]) -> None:
         notes.append("В отслеживаемых файлах есть незакоммиченные изменения.")
 
 
-def sync_kit(repo: Path, notes: list[str], warns: list[str]) -> None:
-    kit_file = repo / ".qa-kit" / "kit_path"
-    if not kit_file.is_file():
-        return
-    try:
-        kit = Path(kit_file.read_text(encoding="utf-8").strip())
-    except OSError:
-        return
-    if not (kit / ".git").exists() or not (kit / "setup_project.py").is_file():
-        warns.append(f"Комплект не найден по сохранённому пути ({kit}). Запустите setup_project.py заново.")
-        return
-
-    fetch = throttled_fetch(kit, repo / ".qa-kit" / "last_kit_sync")
-    if fetch == "failed":
-        return  # о сети уже сказано выше; про комплект молча
-    behind = count(kit, "HEAD..@{u}")
-    if not behind:
-        return
-
-    manual = (f"git -C \"{kit}\" pull; python \"{kit / 'setup_project.py'}\" \"{repo}\" --update")
-    if os.environ.get("QA_KIT_NO_AUTOUPDATE"):
-        warns.append(f"У комплекта qa-agent-kit есть {behind} новых коммит(ов). Обновить: {manual}")
-        return
-    if tracked_dirty(kit):
-        warns.append(f"У комплекта qa-agent-kit есть {behind} новых коммит(ов), но в нём есть локальные "
-                     f"изменения: сам не обновлял. Обновить вручную: {manual}")
-        return
-    rc, _ = git(kit, "pull", "--ff-only", timeout=FETCH_TIMEOUT * 2)
-    if rc != 0:
-        warns.append(f"У комплекта есть {behind} новых коммит(ов), но подтянуть без слияния не получилось. "
-                     f"Обновить вручную: {manual}")
-        return
-    try:
-        res = subprocess.run(
-            [sys.executable, str(kit / "setup_project.py"), str(repo), "--update", "--no-exclude"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
-        )
-        ok = res.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        ok = False
-    if ok:
-        warns.append(f"Комплект qa-agent-kit обновлён ({behind} коммит(ов)) и применён к проекту. "
-                     "Если новые команды или правила не видны, перезапустите сессию Claude Code.")
-    else:
-        warns.append("Комплект подтянут, но применить к проекту не получилось. "
-                     f"Выполните вручную: python \"{kit / 'setup_project.py'}\" \"{repo}\" --update")
-
-
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -214,7 +164,6 @@ def main() -> int:
             return 0  # не git-репозиторий: молча выходим
         repo = Path(top)
         sync_qa_repo(repo, notes, warns)
-        sync_kit(repo, notes, warns)
     except Exception as exc:  # хук не должен ломать запуск сессии
         warns.append(f"Синхронизация прервалась из-за ошибки: {exc}")
 
@@ -225,7 +174,7 @@ def main() -> int:
     context += [f"- {n}" for n in notes] + [f"- ВНИМАНИЕ: {w}" for w in warns]
     if warns:
         context.append("Сообщи пользователю об этих предупреждениях в первой реплике, коротко. "
-                       "Если сейчас основная ветка, не пиши файлы тестов, предложи /start <имя>.")
+                       "Файлы тестов в основную ветку не пиши: перед генерацией создай рабочую ветку (см. /gen).")
     summary = [f"qa-agent-kit: {n}" for n in notes[:1]] + [f"qa-agent-kit: {w}" for w in warns]
     print(json.dumps({
         "systemMessage": "\n".join(summary),

@@ -232,14 +232,6 @@ def install_hook(repo: Path, update: bool, dry: bool, rep: Report) -> None:
     copy_item(KIT / "hooks" / "qa_sync.py", repo / ".claude" / "hooks" / "qa_sync.py",
               update, dry, rep, "хук qa_sync.py")
 
-    # Путь к комплекту: хук по нему проверяет, не вышла ли новая версия комплекта.
-    kit_file = repo / ".qa-kit" / "kit_path"
-    if not kit_file.exists() or kit_file.read_text(encoding="utf-8").strip() != str(KIT):
-        if not dry:
-            kit_file.parent.mkdir(parents=True, exist_ok=True)
-            kit_file.write_text(str(KIT), encoding="utf-8")
-        rep.add(".qa-kit/kit_path: записан путь к комплекту (для автообновления комплекта)")
-
     settings = repo / ".claude" / "settings.local.json"
     data: dict = {}
     if settings.exists():
@@ -275,7 +267,7 @@ def install_hook(repo: Path, update: bool, dry: bool, rep: Report) -> None:
     if not dry:
         settings.parent.mkdir(parents=True, exist_ok=True)
         settings.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    rep.add("settings.local.json: подключён хук SessionStart (автообновление при старте сессии)")
+    rep.add("settings.local.json: подключён хук SessionStart (fetch и подтягивание при старте сессии)")
 
 
 def update_exclude(repo: Path, dry: bool, rep: Report) -> None:
@@ -319,7 +311,7 @@ def main() -> int:
     ap.add_argument("qa_repo", help="путь к QA-репозиторию (корень), куда подключаем комплект")
     ap.add_argument("--skills-from", help="папка со скиллами (по умолчанию: $QA_KIT_SKILLS, <kit>/skills, ~/qa-skills)")
     ap.add_argument("--update", action="store_true", help="обновить уже установленные команды, скиллы и блок CLAUDE.md")
-    ap.add_argument("--no-hook", action="store_true", help="не подключать автообновление при старте сессии (хук)")
+    ap.add_argument("--no-hook", action="store_true", help="не подключать хук (fetch и подтягивание при старте сессии)")
     ap.add_argument("--no-exclude", action="store_true", help="не трогать .git/info/exclude")
     ap.add_argument("--dry-run", action="store_true", help="только показать, что будет сделано, ничего не менять")
     args = ap.parse_args()
