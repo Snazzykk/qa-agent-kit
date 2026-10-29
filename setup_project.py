@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -223,6 +224,60 @@ def ensure_context_dir(repo: Path, dry: bool, rep: Report) -> None:
     rep.add(".qa-kit/context/: создана (сюда кладите ТЗ, спецификации, коллекции, HAR; в git не попадёт)")
 
 
+HOOK_MARK = "qa_sync.py"
+
+
+def install_hook(repo: Path, update: bool, dry: bool, rep: Report) -> None:
+    """Хук SessionStart: при старте сессии подтягивает свежую версию репозитория и комплекта."""
+    copy_item(KIT / "hooks" / "qa_sync.py", repo / ".claude" / "hooks" / "qa_sync.py",
+              update, dry, rep, "хук qa_sync.py")
+
+    # Путь к комплекту: хук по нему проверяет, не вышла ли новая версия комплекта.
+    kit_file = repo / ".qa-kit" / "kit_path"
+    if not kit_file.exists() or kit_file.read_text(encoding="utf-8").strip() != str(KIT):
+        if not dry:
+            kit_file.parent.mkdir(parents=True, exist_ok=True)
+            kit_file.write_text(str(KIT), encoding="utf-8")
+        rep.add(".qa-kit/kit_path: записан путь к комплекту (для автообновления комплекта)")
+
+    settings = repo / ".claude" / "settings.local.json"
+    data: dict = {}
+    if settings.exists():
+        try:
+            loaded = json.loads(settings.read_text(encoding="utf-8") or "{}")
+        except json.JSONDecodeError:
+            rep.warn(".claude/settings.local.json содержит некорректный JSON: хук SessionStart не подключён. "
+                     "Исправьте файл и запустите скрипт снова.")
+            return
+        if not isinstance(loaded, dict) or not isinstance(loaded.get("hooks", {}), dict):
+            rep.warn(".claude/settings.local.json имеет неожиданную структуру: хук SessionStart не подключён.")
+            return
+        data = loaded
+
+    session_start = data.setdefault("hooks", {}).setdefault("SessionStart", [])
+    for entry in session_start:
+        for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            if HOOK_MARK in str(hook.get("command", "")):
+                rep.skip("settings.local.json: хук SessionStart уже подключён")
+                return
+    if settings.exists() and is_tracked(repo, ".claude/settings.local.json") and not update:
+        rep.warn(".claude/settings.local.json уже в git: подключение хука изменило бы отслеживаемый файл. "
+                 "Не сделано. Запустите с --update или добавьте хук вручную (см. docs/GUIDE.md).")
+        return
+
+    py = "python" if shutil.which("python") else ("python3" if shutil.which("python3") else "python")
+    session_start.append({"hooks": [{
+        "type": "command",
+        "command": f"{py} .claude/hooks/qa_sync.py",
+        "timeout": 60,
+        "statusMessage": "qa-agent-kit: проверка свежести репозитория...",
+    }]})
+    if not dry:
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    rep.add("settings.local.json: подключён хук SessionStart (автообновление при старте сессии)")
+
+
 def update_exclude(repo: Path, dry: bool, rep: Report) -> None:
     if not is_git_repo(repo):
         rep.warn("Это не git-репозиторий (или git не найден): .git/info/exclude не обновлён.")
@@ -264,6 +319,7 @@ def main() -> int:
     ap.add_argument("qa_repo", help="путь к QA-репозиторию (корень), куда подключаем комплект")
     ap.add_argument("--skills-from", help="папка со скиллами (по умолчанию: $QA_KIT_SKILLS, <kit>/skills, ~/qa-skills)")
     ap.add_argument("--update", action="store_true", help="обновить уже установленные команды, скиллы и блок CLAUDE.md")
+    ap.add_argument("--no-hook", action="store_true", help="не подключать автообновление при старте сессии (хук)")
     ap.add_argument("--no-exclude", action="store_true", help="не трогать .git/info/exclude")
     ap.add_argument("--dry-run", action="store_true", help="только показать, что будет сделано, ничего не менять")
     args = ap.parse_args()
@@ -288,6 +344,8 @@ def main() -> int:
     install_claude_md(repo, args.update, args.dry_run, rep)
     install_templates(repo, args.dry_run, rep)
     ensure_context_dir(repo, args.dry_run, rep)
+    if not args.no_hook:
+        install_hook(repo, args.update, args.dry_run, rep)
     if not args.no_exclude:
         update_exclude(repo, args.dry_run, rep)
 

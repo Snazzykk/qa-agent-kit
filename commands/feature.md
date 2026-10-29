@@ -11,6 +11,8 @@ argument-hint: <имя-фичи> [ссылки на Confluence/Jira или по�
 
 ## Шаг 0. Подними сохранённый контекст проекта (из файлов, не из памяти чата)
 
+0. **Ветка.** `git branch --show-current`. Если это основная ветка (`master`/`main`) или detached HEAD, предупреди, что файлы фичи (`features/`) лучше вести в рабочей ветке, и предложи `/start <имя>`. Не блокируй, если это только чтение и разбор.
+
 1. Прочитай `project.yml`, `artifacts/qa-profile.json` и, если есть, `artifacts/source-inventory.json`,
    `artifacts/coverage-map.json`, `docs/test-plan.md`.
 2. Нет `qa-profile.json`: проект не разведан. Скажи это и предложи запустить `/audit`, дальше не иди.
