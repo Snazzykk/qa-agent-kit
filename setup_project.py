@@ -212,6 +212,17 @@ def install_templates(repo: Path, dry: bool, rep: Report) -> None:
         rep.add(f"{label}: создан (заполните)")
 
 
+def ensure_context_dir(repo: Path, dry: bool, rep: Report) -> None:
+    """Папка для файлов с контекстом (ТЗ, спецификации, HAR); исключена из git через .qa-kit/."""
+    ctx = repo / ".qa-kit" / "context"
+    if ctx.is_dir():
+        rep.skip(".qa-kit/context/: уже есть")
+        return
+    if not dry:
+        ctx.mkdir(parents=True, exist_ok=True)
+    rep.add(".qa-kit/context/: создана (сюда кладите ТЗ, спецификации, коллекции, HAR; в git не попадёт)")
+
+
 def update_exclude(repo: Path, dry: bool, rep: Report) -> None:
     if not is_git_repo(repo):
         rep.warn("Это не git-репозиторий (или git не найден): .git/info/exclude не обновлён.")
@@ -276,6 +287,7 @@ def main() -> int:
     install_skills(repo, skills_src, args.update, args.dry_run, rep)
     install_claude_md(repo, args.update, args.dry_run, rep)
     install_templates(repo, args.dry_run, rep)
+    ensure_context_dir(repo, args.dry_run, rep)
     if not args.no_exclude:
         update_exclude(repo, args.dry_run, rep)
 

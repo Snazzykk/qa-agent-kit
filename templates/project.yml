@@ -47,11 +47,11 @@ dev_repo:
 # уверенности. Чем больше источников указано, тем точнее результат. Всё необязательно по отдельности.
 sources:
   api_spec:                 # OpenAPI/Swagger. Формат: ссылка (https://stage.example.com/openapi.json)
-                            #                    или путь к файлу (docs/openapi.yaml)
-  collections: []           # Postman/Insomnia-выгрузки. Формат списка:  - docs/payments.postman.json
+                            #                    или путь к файлу (.qa-kit/context/openapi.yaml)
+  collections: []           # Postman/Insomnia-выгрузки. Формат списка:  - .qa-kit/context/payments.postman.json
                             #                                            - docs/Insomnia_2026.json
   har: []                   # HAR-записи из браузера (DevTools -> Network -> Save all as HAR).
-                            # Формат списка:  - docs/checkout.har
+                            # Формат списка:  - .qa-kit/context/checkout.har
   stand:                    # Живой стенд, чтобы смотреть реальные ответы и UI.
     url:                    # формат: https://stage.example.com
     reachable_from_here: unknown   # yes / no / unknown: открывается ли стенд с этой машины.
@@ -96,12 +96,15 @@ existing_tests:
 # -----------------------------------------------------------------------------
 # [ЖЕЛАТЕЛЬНО]  КОГДА: /reconcile (сверка кода и ТЗ). Для /audit не нужно.
 # Если пусто, /reconcile честно скажет «сверять не с чем», и план будет только по коду.
+# ГДЕ ХРАНИТЬ ФАЙЛЫ С КОНТЕКСТОМ (ТЗ, спецификации, коллекции, HAR): в папке .qa-kit/context/
+# QA-репозитория. Она создаётся скриптом подключения и исключена из git, поэтому документы
+# проекта случайно не уйдут в коммит. В других папках (например docs/) они были бы видны git.
 # Можно указать несколько источников сразу, они объединяются.
 requirements:
   # Источник 1: файлы и папки (самое простое и надёжное).
   # Формат: пути к папкам или файлам (.md, .txt, .pdf, .docx, .csv, .json).
-  files: []                 # пример:  - docs/requirements/
-                            #          - docs/specs/payments.md
+  files: []                 # пример:  - .qa-kit/context/requirements/
+                            #          - .qa-kit/context/specs/payments.md
 
   # Источник 2: MCP (Confluence, Jira и т.п.).
   # MCP сам по себе здесь НЕ подключается: сервер описывается в .mcp.json (см. блок mcp ниже).

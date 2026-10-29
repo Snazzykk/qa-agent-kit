@@ -52,10 +52,10 @@ name: payments-qa
 sources:
   api_spec: https://stage.example.com/openapi.json    # Swagger/OpenAPI, ссылка или файл
   collections:
-    - docs/payments.postman.json
+    - .qa-kit/context/payments.postman.json
 requirements:
   files:
-    - docs/requirements/
+    - .qa-kit/context/requirements/
 ```
 Нужен хотя бы один источник. Без этого `/audit` остановится и спросит, чем руководствоваться.
 
@@ -68,13 +68,19 @@ requirements:
 
 | Что у вас есть | Куда класть |
 |---|---|
-| ТЗ, требования, выгрузки в файлах (md, txt, pdf, docx, csv, json) | папка в QA-репо, например `docs/requirements/`, и путь в `requirements.files` |
+| ТЗ, требования, выгрузки в файлах (md, txt, pdf, docx, csv, json) | папка `.qa-kit/context/` в QA-репо (например `.qa-kit/context/requirements/`) и путь в `requirements.files` |
 | Swagger/OpenAPI | `sources.api_spec` |
 | Postman/Insomnia, HAR | `sources.collections`, `sources.har` |
 | Страницы Confluence, задачи Jira | MCP в `.mcp.json` (см. ниже) и ссылки в `requirements.confluence/jira` или в `features/<имя>/brief.md` |
 | Устные договорённости | `requirements.notes` или раздел «Устные договорённости» в `brief.md` |
 | Правила команды по тестам (нейминг, структура, запреты) | файл, например `docs/team-test-rules.md`, и путь в `conventions.file`; короткие правила можно прямо в `conventions.inline` |
 | Адрес стенда, команда запуска | `env.base_url`, `env.run_command`; токены только в переменных окружения |
+
+**Все файлы с контекстом (ТЗ, спецификации, коллекции, HAR) кладите в `.qa-kit/context/`.** Скрипт подключения
+создаёт эту папку, и она исключена из git (`.git/info/exclude`): документы проекта не попадут в коммит.
+В обычных папках репозитория (например `docs/`) git их увидит как неотслеживаемые, и их легко закоммитить
+случайно командой `git add .`. Правила команды (`conventions`) можно держать там, где удобно, обычно
+это отдельный файл, который команда и так ведёт.
 
 ### MCP для Confluence и Jira
 
