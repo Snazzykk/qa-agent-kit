@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-"""SessionStart-хук qa-agent-kit: свежая версия QA-репозитория и комплекта в начале сессии.
+"""SessionStart-хук qa-agent-kit: подтягивает свежий код QA-репозитория в начале сессии.
 
-Что делает (только безопасное, без слияний и перезаписи ваших изменений):
-  1. git fetch в QA-репозитории (не чаще раза в 10 минут) и показывает, где вы стоите.
-  2. На основной ветке (master/main): если дерево чистое и есть новые коммиты, подтягивает их
-     (git pull --ff-only). Предупреждает, что работать лучше в рабочей ветке (команда /start).
-  3. На рабочей ветке: сообщает, насколько она отстаёт от основной; свой upstream подтягивает
-     только если дерево чистое и это fast-forward.
-  Отключить хук совсем: переменная QA_KIT_NO_SYNC=1.
+Что делает:
+  1. git fetch (не чаще раза в 10 минут).
+  2. Вы на master/main, правок нет, на сервере есть новое: git pull --ff-only.
+  3. Сообщает вам и агенту одну строку статуса и предупреждения (правки мешают, нет сети, ветка отстаёт).
 
-Никогда не создаёт и не переключает ветки, не делает commit и push, не падает при отсутствии сети
-(при ошибке просто сообщает об этом). Всегда завершается с кодом 0.
-
-Вывод: JSON для Claude Code (systemMessage показывается вам, additionalContext попадает агенту).
+Ветки не создаёт и не переключает, ничего не коммитит и не отправляет (рабочую ветку создаёт /gen).
+Отключить: переменная QA_KIT_NO_SYNC=1. Всегда завершается с кодом 0.
 """
 from __future__ import annotations
 
@@ -23,127 +18,87 @@ import sys
 import time
 from pathlib import Path
 
-FETCH_TIMEOUT = 20          # секунд на один git fetch
-THROTTLE_SECONDS = 600      # не обращаться к сети чаще, чем раз в 10 минут
 TAG = "[qa-agent-kit sync]"
+THROTTLE_SECONDS = 600
+TIMEOUT = 20
 
 
 def git(repo: Path, *args: str, timeout: int = 30) -> tuple[int, str]:
     try:
-        res = subprocess.run(
-            ["git", "-C", str(repo), *args],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-        )
+        res = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=timeout)
         return res.returncode, (res.stdout or "").strip()
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return 1, ""
 
 
-def tracked_dirty(repo: Path) -> bool:
-    """Есть ли незакоммиченные изменения в отслеживаемых файлах (неотслеживаемые не считаются)."""
-    rc, out = git(repo, "status", "--porcelain")
-    return rc == 0 and any(line and not line.startswith("??") for line in out.splitlines())
+def count(repo: Path, rng: str) -> int:
+    rc, out = git(repo, "rev-list", "--count", rng)
+    return int(out) if rc == 0 and out.isdigit() else 0
 
 
-def default_branch(repo: Path) -> str | None:
+def base_branch(repo: Path) -> str | None:
     rc, out = git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
     if rc == 0 and out.startswith("origin/"):
         return out[len("origin/"):]
     for cand in ("master", "main"):
-        rc, _ = git(repo, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{cand}")
-        if rc == 0:
+        if git(repo, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{cand}")[0] == 0:
             return cand
     return None
 
 
-def count(repo: Path, rng: str) -> int | None:
-    rc, out = git(repo, "rev-list", "--count", rng)
-    return int(out) if rc == 0 and out.isdigit() else None
-
-
-def throttled_fetch(repo: Path, stamp: Path) -> str:
-    """Возвращает 'ok', 'skipped' (недавно уже ходили в сеть) или 'failed'."""
+def fetch(repo: Path) -> bool:
+    """False, если fetch не удался. Недавний успешный fetch повторно не делаем."""
+    stamp = repo / ".qa-kit" / "last_sync"
     try:
         if stamp.is_file() and time.time() - stamp.stat().st_mtime < THROTTLE_SECONDS:
-            return "skipped"
+            return True
     except OSError:
         pass
-    rc, _ = git(repo, "fetch", "--prune", "origin", timeout=FETCH_TIMEOUT)
-    if rc != 0:
-        return "failed"
+    if git(repo, "fetch", "--prune", "origin", timeout=TIMEOUT)[0] != 0:
+        return False
     try:
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(str(int(time.time())), encoding="utf-8")
     except OSError:
         pass
-    return "ok"
+    return True
 
 
-def sync_qa_repo(repo: Path, notes: list[str], warns: list[str]) -> None:
-    state = repo / ".qa-kit"
-    fetch = throttled_fetch(repo, state / "last_sync")
-    if fetch == "failed":
-        warns.append("Не удалось связаться с удалённым репозиторием (нет сети или доступа): "
-                     "статус ниже построен по последним известным данным.")
-
-    base = default_branch(repo)
-    rc, branch = git(repo, "branch", "--show-current")
-    if rc != 0:
-        return
+def check(repo: Path) -> tuple[str, list[str]]:
+    """Возвращает (строка статуса, предупреждения)."""
+    warns: list[str] = []
+    if not fetch(repo):
+        warns.append("не удалось связаться с удалённым репозиторием (нет сети или доступа), "
+                     "статус построен по последним известным данным")
+    base = base_branch(repo)
+    branch = git(repo, "branch", "--show-current")[1]
     if not branch:
-        warns.append("Репозиторий в состоянии detached HEAD (не на ветке). Для работы создайте ветку: /start <имя>.")
-        return
+        return "репозиторий не на ветке (detached HEAD)", warns
     if base is None:
-        notes.append(f"Ветка: {branch}. Основную ветку (origin/master или origin/main) определить не удалось.")
-        return
+        return f"ветка {branch}, основную ветку определить не удалось", warns
 
-    dirty = tracked_dirty(repo)
+    rc, status = git(repo, "status", "--porcelain")
+    dirty = rc == 0 and any(l and not l.startswith("??") for l in status.splitlines())
 
     if branch == base:
-        behind = count(repo, f"HEAD..origin/{base}") or 0
-        if behind > 0:
-            if dirty:
-                warns.append(f"Вы на основной ветке {base}, и она отстаёт от origin на {behind} коммит(ов), "
-                             "но есть незакоммиченные изменения: подтягивать не стал.")
-            else:
-                rc, out = git(repo, "pull", "--ff-only", "origin", base, timeout=FETCH_TIMEOUT * 2)
-                if rc == 0:
-                    notes.append(f"Основная ветка {base} обновлена: подтянуто {behind} коммит(ов).")
-                else:
-                    warns.append(f"Основная ветка {base} отстаёт на {behind} коммит(ов), "
-                                 "но подтянуть без слияния не получилось. Сделайте git pull вручную.")
-        else:
-            notes.append(f"Основная ветка {base} актуальна.")
-        notes.append(f"Вы на основной ветке {base}. Перед генерацией тестов агент сам создаст рабочую "
-                     "ветку от свежей основной (команда /gen); вручную то же делает /start <имя>.")
-        return
+        behind = count(repo, f"HEAD..origin/{base}")
+        line = f"вы на основной ветке {base}; рабочую ветку для тестов создаст /gen"
+        if behind == 0:
+            return f"{line}; она актуальна", warns
+        if dirty:
+            warns.append(f"{base} отстаёт от origin на {behind} коммит(ов), но есть ваши правки: не подтягивал")
+            return line, warns
+        if git(repo, "pull", "--ff-only", "origin", base, timeout=TIMEOUT * 2)[0] == 0:
+            return f"{line}; подтянуто {behind} коммит(ов)", warns
+        warns.append(f"{base} отстаёт на {behind} коммит(ов), подтянуть без слияния не вышло: сделайте git pull")
+        return line, warns
 
-    # рабочая ветка
-    behind_base = count(repo, f"{branch}..origin/{base}") or 0
-    ahead_base = count(repo, f"origin/{base}..{branch}") or 0
-    if behind_base > 0:
-        warns.append(f"Ветка {branch} отстаёт от origin/{base} на {behind_base} коммит(ов) "
-                     f"(впереди на {ahead_base}). Если нужна свежая основа: git merge origin/{base} "
-                     "или git rebase (я сам этого не делаю).")
-    else:
-        notes.append(f"Ветка {branch} содержит все коммиты origin/{base}.")
-
-    rc, upstream = git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-    if rc == 0 and upstream:
-        behind_up = count(repo, f"HEAD..{upstream}") or 0
-        if behind_up > 0:
-            if dirty:
-                warns.append(f"В {upstream} есть {behind_up} новых коммит(ов), но у вас незакоммиченные "
-                             "изменения: подтягивать не стал.")
-            else:
-                rc, _ = git(repo, "pull", "--ff-only", timeout=FETCH_TIMEOUT * 2)
-                if rc == 0:
-                    notes.append(f"Ветка {branch} обновлена из {upstream}: подтянуто {behind_up} коммит(ов).")
-                else:
-                    warns.append(f"В {upstream} есть {behind_up} новых коммит(ов), но подтянуть без "
-                                 "слияния не получилось (ветки разошлись). Решите вручную.")
-    if dirty:
-        notes.append("В отслеживаемых файлах есть незакоммиченные изменения.")
+    behind = count(repo, f"{branch}..origin/{base}")
+    if behind:
+        warns.append(f"ветка {branch} отстаёт от origin/{base} на {behind} коммит(ов) "
+                     f"(git merge origin/{base} или rebase делаете вы)")
+    return f"ветка {branch}" + (" (есть незакоммиченные правки)" if dirty else ""), warns
 
 
 def main() -> int:
@@ -152,41 +107,31 @@ def main() -> int:
     if os.environ.get("QA_KIT_NO_SYNC"):
         return 0
     try:
-        sys.stdin.read()  # хук получает JSON на stdin; нам он не нужен
+        sys.stdin.read()
     except Exception:
         pass
-
-    notes: list[str] = []
-    warns: list[str] = []
     try:
         rc, top = git(Path.cwd(), "rev-parse", "--show-toplevel")
         if rc != 0 or not top:
-            return 0  # не git-репозиторий: молча выходим
-        repo = Path(top)
-        sync_qa_repo(repo, notes, warns)
+            return 0
+        status, warns = check(Path(top))
     except Exception as exc:  # хук не должен ломать запуск сессии
-        warns.append(f"Синхронизация прервалась из-за ошибки: {exc}")
+        status, warns = "", [f"синхронизация прервалась: {exc}"]
 
-    if not notes and not warns:
+    lines = ([f"qa-agent-kit: {status}"] if status else []) + [f"qa-agent-kit: ВНИМАНИЕ: {w}" for w in warns]
+    if not lines:
         return 0
-
-    context = [f"{TAG} Состояние репозитория на старте сессии (собрано автоматически):"]
-    context += [f"- {n}" for n in notes] + [f"- ВНИМАНИЕ: {w}" for w in warns]
+    context = f"{TAG} состояние репозитория на старте сессии:\n" + "\n".join(f"- {l}" for l in lines)
     if warns:
-        context.append("Сообщи пользователю об этих предупреждениях в первой реплике, коротко. "
-                       "Файлы тестов в основную ветку не пиши: перед генерацией создай рабочую ветку (см. /gen).")
-    summary = [f"qa-agent-kit: {n}" for n in notes[:1]] + [f"qa-agent-kit: {w}" for w in warns]
-    print(json.dumps({
-        "systemMessage": "\n".join(summary),
-        "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(context)},
-    }, ensure_ascii=True))
+        context += "\nСообщи пользователю о предупреждениях в первой реплике, коротко."
+    print(json.dumps({"systemMessage": "\n".join(lines),
+                      "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}},
+                     ensure_ascii=True))
     return 0
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except SystemExit:
-        raise
     except BaseException:
         sys.exit(0)

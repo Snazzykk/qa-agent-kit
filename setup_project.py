@@ -38,7 +38,6 @@ EXCLUDE_ENTRIES = [
     "features/",
     ".qa-kit/",
     "docs/test-plan.md",
-    "docs/gap-report.md",
     "docs/automation-plan.md",
 ]
 
@@ -356,7 +355,7 @@ def main() -> int:
 
     say()
     say("Дальше:")
-    say("  1. Заполните project.yml (минимум: dev_repo ИЛИ источник в sources/requirements).")
+    say("  1. Заполните project.yml (блоки 1-4; минимум: имя и один источник в блоке 2).")
     say("  2. Если нужны Confluence/Jira, добавьте MCP в .mcp.json вручную (см. README).")
     say("  3. Откройте claude в этом репозитории и напишите /audit")
     return 0
