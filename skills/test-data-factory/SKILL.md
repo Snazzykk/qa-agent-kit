@@ -5,6 +5,10 @@ description: Build OOP factory-boy / Faker factories for SQLAlchemy / Django / P
 
 # Test Data Factory — OOP
 
+For an existing repository, first inspect its data helpers and fixtures through `qa-project-style`.
+Extend the existing approach when it covers the task. Use the factory-boy classes below when that
+dependency and architecture are already chosen; the `python-api-template` blueprint uses helper functions.
+
 Produces OOP `factory-boy` classes for every detected model. **Strict inheritance hierarchy, SubFactory for FKs, Trait for variants, post_generation hooks for M2M.**
 
 ## Base Class per ORM

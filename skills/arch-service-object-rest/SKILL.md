@@ -1,9 +1,13 @@
 ---
 name: arch-service-object-rest
-description: Scaffold a COMPLETE Service Object Model (SOM) for REST APIs — BaseAPI + RequestClient (httpx session with default headers, auth injection, Allure logging, Pydantic response validation), per-resource services/<name>/{api.py, endpoints.py, payloads.py, models/}, Headers class, Tokens class, Helper. One call → full framework. Activate when the user says "service object model", "som rest", "scaffold api framework", "build rest service object", "heisenbug pattern".
+description: Scaffold a REST Service Object Model when the user explicitly selects SOM/Heisenbug architecture or the repository already uses it.
 ---
 
 # Architecture Scaffold — REST Service Object Model
+
+Select this architecture only for an explicit SOM request or an existing matching project. Preserve
+that project's actual conventions. For other existing repositories or the default new Python API
+blueprint, use `qa-project-style`; its resource-client layout does not require this SOM tree.
 
 One-shot scaffold of the Service Object Model used by **ServiceObjectModelAdvanced / Heisenbug / VinobridgeUI**: a central `RequestClient` with session / logging / validation, `BaseAPI` as the shared parent, and one `services/<resource>/` folder per resource with `api.py`, `endpoints.py`, `payloads.py`, `models/`.
 

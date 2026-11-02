@@ -6,19 +6,64 @@
 
 - Python 3.10+ (команда `python --version` должна ответить; на некоторых машинах он называется `py`).
 - git (для клонирования комплекта и репозитория разработки).
-- Claude Code (команда `claude`).
+- Codex или Claude Code (команда `codex` или `claude`, либо приложение Codex).
 - Node.js (`npx`) только если подключаете MCP-серверы, которым он нужен.
-- Доступ в сеть нужен для `git clone` и самого Claude Code. Остальному (скрипт подключения) сеть не нужна.
+- Доступ в сеть нужен для `git clone` и обращения к модели. Сам установщик работает локально.
 
 ## 1. Получить комплект на новую машину
 
+Проверьте `git --version` и `python --version`, войдите в Codex и настройте доступ Git к своему
+GitHub-аккаунту. Репозиторий kit приватный.
+
 ```powershell
-git clone git@github.com:<аккаунт>/qa-agent-kit.git C:\tools\qa-agent-kit
+$kitPath = Join-Path $env:USERPROFILE 'Work\products\qa-agent-kit'
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $kitPath) | Out-Null
+git clone https://github.com/Snazzykk/qa-agent-kit.git $kitPath
 ```
 
-Скиллы лежат в комплекте (`skills/`), отдельно ничего скачивать не нужно.
+Скиллы и `python-api-template` лежат в комплекте; отдельно скачивать шаблон и копировать личный
+Codex skill со старого ПК не нужно. В следующих примерах `C:\tools\qa-agent-kit` означает папку
+клонированного kit; можно подставить `$kitPath`. Папку QA-репозитория клонируйте отдельно.
+
+Можно поручить подключение агенту обычным сообщением:
+
+> Склонируй https://github.com/Snazzykk/qa-agent-kit.git в папку моих инструментов.
+> Прочитай README. Подключи kit для Codex к QA-репозиторию по пути … и помоги заполнить контекст.
+
+При переносе действующего проекта clone скачивает только Git-файлы. Локальные `project.yml`,
+`artifacts/`, `features/`, `.qa-kit/context/` перенесите отдельно либо восстановите аудитом по источникам.
+Перепроверьте пути, подключите MCP/стенд на новом ПК и выполните установщик: он заново настроит exclude.
+Старую `.git`, auth Codex и виртуальное окружение переносить не требуется.
 
 ## 2. Подключить к QA-репозиторию
+
+### Codex
+
+```powershell
+python C:\tools\qa-agent-kit\setup_project.py C:\work\my-qa-tests --agent codex --skills api-test-generator,pytest-failure-analyzer --dry-run
+python C:\tools\qa-agent-kit\setup_project.py C:\work\my-qa-tests --agent codex --skills api-test-generator,pytest-failure-analyzer
+```
+
+Появятся `AGENTS.md`, пять workflow-скиллов и выбранные технические скиллы в `.agents/skills/`,
+`project.yml`, шаблон фичи и `.qa-kit/context/`. `qa-project-style` всегда берётся из kit; при необходимости
+можно установить только его: `--skills qa-project-style`. Остальные рабочие этапы всё равно доступны.
+Локальные Git-исключения добавляются адресно; чужая `.agents/` целиком не скрывается.
+
+Откройте папку QA-репозитория в Codex. Этапы:
+
+| Claude Code | Codex |
+|---|---|
+| `/audit` | `$qa-project-audit` |
+| `/plan` | `$qa-test-plan` |
+| `/feature имя` | `$qa-feature-cases` с именем фичи в запросе |
+| `/gen цель` | `$qa-test-generation` с целью в запросе |
+| `/triage failures` | `$qa-test-triage` с режимом в запросе |
+
+Дальнейшие разделы описывают общий workflow именами команд Claude; в Codex используйте соответствующие
+скиллы из таблицы. Claude SessionStart и `.mcp.json` не подключаются в Codex: MCP настраивается
+его средствами, свежесть контекста проверяется по Git и текущим исходникам.
+
+### Claude Code
 
 ```powershell
 python C:\tools\qa-agent-kit\setup_project.py C:\work\my-qa-tests --dry-run   # посмотреть, что будет
@@ -118,6 +163,11 @@ on-prem). Добавьте сервер в `.mcp.json` в корне QA-репо
 
 Подробно в `README.md`, раздел «Сценарии». Кратко:
 
+Перед генерацией `qa-project-style` фиксирует конкретные образцы и зависимости в `style_profile`
+существующего `artifacts/qa-profile.json`; после генерации агент проверяет соответствие diff.
+Для нового Python API-проекта blueprint — `python-api-template`; его переносимый offline-каркас
+описан в README. Стиль готового проекта всегда имеет приоритет над этим личным образцом.
+
 - **Ветка:** `/gen` сам создаёт рабочую ветку, если вы на `master`.
 - **Новый проект:** `/audit` → `/plan` (сам сверит с требованиями, если они указаны) → вы пишете «план утверждаю» →
   `/gen <модуль>`.
@@ -160,9 +210,9 @@ git -C C:\tools\qa-agent-kit pull
 python C:\tools\qa-agent-kit\setup_project.py C:\work\my-qa-tests --update
 ```
 
-`--update` перезаписывает команды, скиллы и блок правил версией комплекта. Если вы вручную правили
-скопированный скилл или команду в проекте, эти правки будут потеряны: вносите их в комплект, а не в
-копию. Свой текст в `CLAUDE.md` вне маркеров не затрагивается.
+`--update` обновляет команды, скиллы и блок правил. Предыдущие файлы сохраняются в `.qa-kit/backups/`;
+дополнительные пользовательские ресурсы не удаляются. Свой текст в `CLAUDE.md` или `AGENTS.md`
+вне маркеров сохраняется. Для Codex при обновлении также укажите `--agent codex` и нужный `--skills`.
 
 ## 9. Git-гигиена в QA-репо
 

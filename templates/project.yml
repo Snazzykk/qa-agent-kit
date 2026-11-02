@@ -118,6 +118,11 @@ rules: []                   # короткие правила списком. Ф
 #   reference_tests: []     # 1-3 образцовых файла. Формат: - tests/api/test_orders.py
 #                           #   Пусто = агент выберет сам и покажет, какие выбрал.
 
+# bootstrap:
+#   blueprint: python-api-template  # личный образец для Python API, когда тестов ещё нет.
+#                               # qa-project-style содержит архитектуру и переносимый offline demo.
+#                               # Существующие тесты и rules имеют приоритет над blueprint.
+
 # env:
 #   required_vars: []       # ИМЕНА переменных окружения, нужных тестам. Формат: - API_TOKEN
 #   reachable_from_here: unknown   # yes / no / unknown. no = тесты только пишем, не запускаем.

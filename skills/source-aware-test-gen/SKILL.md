@@ -5,6 +5,15 @@ description: Generate tests grounded in the SUT source code — reads artifacts/
 
 # Source-Aware Test Generation
 
+## Project architecture first
+
+Read `qa-project-style` and the current QA profile before selecting output templates. Derive behavior
+from product sources and implementation conventions from the target test repository. Existing fixtures,
+resource clients, assertions and function/class style take precedence over the OOP examples below.
+For a new Python API repository, use the selected `python-api-template` blueprint. Code-graph queries and
+LazyContextLoader below describe optional analysis tooling: use available repository search when no
+graph exists, and keep generator infrastructure out of the test project unless the task requires it.
+
 **The anti-hallucination skill.** Tests only reference artifacts that exist in the SUT source — real routes, Pydantic field names, actual `data-testid`s, specific error strings from the handler code. Powered by the inventory from `source-code-audit`, the graph built by `code-graph-analyzer`, and optional `playwright-mcp` exploration of the running app.
 
 Instead of "load every file under `app/`" this skill **queries the code graph lazily per target** via `LazyContextLoader`, so a single test-gen run stays well under 50K tokens.
@@ -152,7 +161,7 @@ from models    from schema                     + playwright-mcp
 3. **Status codes:** the exact set documented in the handler's `status_code=` or raised from `HTTPException`.
 4. **Error messages:** from the handler's `detail=` / `message=` constants; don't paraphrase.
 5. **Selectors:** `data-testid` from the SUT JSX/TSX; if absent, emit TODO recommending the SUT team add one.
-6. **Auth:** match the handler's `Depends(require_auth)` / `@login_required` — generate `BaseAuthenticatedTest` subclass.
+6. **Auth:** match the handler's actual authorization requirements using the repository's existing auth fixtures/client. A `BaseAuthenticatedTest` subclass applies only when that hierarchy is already chosen.
 7. **Side effects:** if handler calls `email.send(...)`, the test must assert the email mock was called.
 
 ## OOP Target Shape

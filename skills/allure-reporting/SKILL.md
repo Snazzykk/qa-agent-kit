@@ -1,12 +1,18 @@
 ---
 name: allure-reporting
 description: Allure Report integration with pytest — decorators, steps, attachments, severity levels, test categorization, CI/CD integration, and custom report plugins.
-origin: custom
+metadata:
+  origin: custom
 ---
 
 # Allure Reporting Patterns
 
 Comprehensive Allure Report integration for pytest test suites.
+
+Use the project's existing decorators, step language and assertion wrappers. Apply Allure metadata to
+pytest functions when that is the repository's style; the class hierarchy below is an OOP example.
+For a new Python API project use `qa-project-style` and its reporting helpers. Add TMS links/IDs only
+when actual values are supplied by the project; reuse request attachments already produced by its client.
 
 ## When to Activate
 
